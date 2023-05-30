@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+	<head lang="en">
+		<meta charset="utf-8">
+		<title>My first three.js app</title>
+		<style>
+			body { margin: 0; }
+			.d-flex {
+				display: flex ;
+			}
+			.button {
+				background-color: aqua;
+				width: 50px;
+				height: 50px;
+				cursor: pointer;
+				margin: 5px;
+				border-radius: 10px;
+				padding: 5px;
+			}
+			.button:hover {
+				background-color: rgb(0, 255, 123);
+			}
+		</style>
+		<script type="importmap">
+			{
+			  "imports": {
+				"three/addons/": "https://unpkg.com/three@0.152.2/examples/jsm/"
+			  }
+			}
+		</script>
+		<script type="module" src="main.js" defer></script>
+		
+	</head>
+	<body>
+		<div class="d-flex">
+			<div class="button" id="zButton1" data-index="1">Z1</div>
+			<div class="button" id="zButton2" data-index="2">Z2</div>
+			<div class="button" id="zButton3" data-index="3">Z3</div>
+		</div>
+		<div class="d-flex">
+			<div class="button" id="yButton1" data-index="1">Y1</div>
+			<div class="button" id="yButton2" data-index="2">Y2</div>
+			<div class="button" id="yButton3" data-index="3">Y3</div>
+		</div>
+		<div class="d-flex">
+			<div class="button" id="xButton1" data-index="1">X1</div>
+			<div class="button" id="xButton2" data-index="2">X2</div>
+			<div class="button" id="xButton3" data-index="3">X3</div>
+		</div>
+	</body>
+</html>
