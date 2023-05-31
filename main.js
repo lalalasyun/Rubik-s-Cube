@@ -5,9 +5,15 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 const renderer = new THREE.WebGLRenderer();
-renderer.setSize(800, 600);
+renderer.setSize( window.innerWidth, window.innerHeight );
 const canvas = renderer.domElement
 document.body.appendChild(canvas);
+
+const controls = new OrbitControls(camera, canvas);
+
+controls.enableDamping = true;
+controls.dampingFactor = 0.2;
+
 
 class Rubiks {
     model = new THREE.Object3D();
@@ -248,26 +254,96 @@ scene.add(rubik.model);
 
 rubik.drawMeshList();
 
-const Button = { z: new Array(3), x: new Array(3), y: new Array(3) };
-for (const axis of ['z', 'x', 'y']) {
-    for (let i = 0; i < 3; i++) {
-        Button[axis] = document.getElementById(axis + "Button" + (i + 1));
-        Button[axis].addEventListener('wheel', function(e) {
-            if (rubik.isDuringRotation()) return;
-            if (e.deltaY > 0) {
-                rubik.rotationMesh(axis, i, 0.03);
-            } else {
-                rubik.rotationMesh(axis, i, -0.03);
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+let isMouseDown = false;
+function onPointerMove( event ) {
+    if (!isMouseDown) return;
+    if (event.type === "touchmove") {
+        pointer.x = ( event.touches[0].clientX / window.innerWidth ) * 2 - 1;
+	    pointer.y = - ( event.touches[0].clientY / window.innerHeight ) * 2 + 1;
+    }
+    if (event.type === "mousemove") {
+        pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+        pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+    }
+    render();
+}
+
+let lastPosition = [];
+let lastFaceIndex = 0;
+function render() {
+    if (rubik.isDuringRotation()) return;
+    
+	raycaster.setFromCamera( pointer, camera );
+	const intersects = raycaster.intersectObjects( scene.children );
+
+    if (intersects.length == 0) return; 
+
+    controls.enabled = false
+    const p = intersects[0].object.position;
+    let nowPosition = [p.x,p.y,p.z];
+
+    if (lastPosition.length) {
+        if (lastPosition.toString() == nowPosition.toString()) return;
+        let move = []
+        for (let i in lastPosition) {
+            move.push(lastPosition[i] - nowPosition[i]);
+        }
+        let reverse1 = lastFaceIndex % 2 == 0 ? -1:1;
+        let reverse2 = lastFaceIndex % 2 == 0 ? 1:-1;
+        const index = Math.floor(lastFaceIndex / 2)
+        if (index == 0) {
+            if (move[1] !== 0) {
+                rubik.rotationMesh('z', lastPosition[2]+1, 0.03 * move[1] * reverse1);
             }
-        }, { passive: false });
+            if (move[2] !== 0) {
+                rubik.rotationMesh('y', lastPosition[1]+1, 0.03 * move[2] * reverse2);
+            }
+        }
+        if (index == 1) {
+            if (move[0] !== 0) {
+                rubik.rotationMesh('z', lastPosition[2]+1, 0.03 * move[0] * reverse2);
+            }
+            if (move[2] !== 0) {
+                rubik.rotationMesh('x', lastPosition[0]+1, 0.03 * move[2] * reverse1);
+            }
+        }
+        if (index == 2) {
+            if (move[0] !== 0) {
+                rubik.rotationMesh('y', lastPosition[1]+1, 0.03 * move[0] * reverse1);
+            }
+            if (move[1] !== 0) {
+                rubik.rotationMesh('x', lastPosition[0]+1, 0.03 * move[1] * reverse2);
+            }
+        }
+        lastPosition = [];
+        lastFaceIndex = 0;
+    } else {
+        lastFaceIndex = intersects[0].face.materialIndex;
+        lastPosition = [p.x,p.y,p.z];
     }
 }
 
+window.addEventListener('touchmove', onPointerMove);
+window.addEventListener('touchstart', ()=>{
+    isMouseDown = true;
+});
+window.addEventListener('touchend', ()=>{
+    controls.enabled = true;
+    isMouseDown = false;
+});
 
-const controls = new OrbitControls(camera, canvas);
 
-controls.enableDamping = true;
-controls.dampingFactor = 0.2;
+window.addEventListener('mousemove', onPointerMove);
+window.addEventListener('mousedown', ()=>{
+    isMouseDown = true;
+});
+window.addEventListener('mouseup', ()=>{
+    controls.enabled = true;
+    isMouseDown = false;
+});
 
 function animate() {
     controls.update();
