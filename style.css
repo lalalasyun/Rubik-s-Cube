@@ -1,0 +1,14 @@
+body { 
+    margin: 0;
+    position: relative;
+}
+
+.controller {
+    position: absolute;
+    bottom:0px;
+    right: 0px;
+}
+
+#controller_speed {
+    width: 150px;
+}

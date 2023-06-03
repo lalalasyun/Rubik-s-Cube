@@ -19,8 +19,13 @@ class Rubiks {
     model = new THREE.Object3D();
     rubik = new THREE.Object3D();
     nowPivotList = new THREE.Object3D();
-    position = { x: 0, y: 0, z: 0 }
-    rotation = { x: 0, y: 0, z: 0 }
+    position = { x: 0, y: 0, z: 0 };
+    rotation = { x: 0, y: 0, z: 0 };
+    pivot = null;
+    history = [];
+    nowHistory = 0;
+
+    isAutoMode = false;
 
     constructor(w, h, z) {
         this._size = { x: w, y: h, z: z };
@@ -101,7 +106,57 @@ class Rubiks {
         })
     }
 
-    rotationMesh(axis, index, angle) {
+    scramble(angle = 1,limit = 1,interval=100) {
+        const getRandomInt = (max) => {
+            return Math.floor(Math.random() * max);
+        }
+        const axis = ['x','y','z'];
+        let count = 0;
+        this.isAutoMode = true;
+        const scrambler = setInterval(()=>{
+            let addRotation = [axis[getRandomInt(3)], getRandomInt(3),getRandomInt(2)?1:-1]
+            this.addHistory(addRotation[0], addRotation[1], addRotation[2]);
+            this.rotationMesh(addRotation[0], addRotation[1], angle,addRotation[2]);
+            if (count > limit) {
+                clearInterval(scrambler);
+                this.isAutoMode = false;
+            }
+            count++;
+        },interval)
+    }
+
+    prevHistory(angle=1,limit=1,interval=100) {
+        if (this.nowHistory <= 0) return;
+        let count = 0;
+        this.isAutoMode = true;
+        const auto = setInterval(()=>{
+            this.nowHistory -= 1;
+            const h = this.history[this.nowHistory];
+            this.rotationMesh(h.axis,h.index,angle,h.direction * -1);
+            count++;
+            if (count >= limit) {
+                this.isAutoMode = false;
+                clearInterval(auto);
+            }
+        },interval)
+    }
+
+    nextHistory(angle) {
+        if (this.nowHistory > this.history.length - 1) return;
+        const h = this.history[this.nowHistory];
+        this.nowHistory += 1;
+        this.rotationMesh(h.axis,h.index,angle,h.direction);
+    }
+
+    addHistory(axis, index, direction) {
+        this.history[this.nowHistory++] = {
+            axis:axis,
+            index:index,
+            direction:direction
+        };
+    }
+
+    rotationMesh(axis, index, angle, direction) {
         this.nowPivotList = new THREE.Object3D();
         const getRotationAllMesh = (ax, index) => {
             this.threeDimensionalArray((z, y, x) => {
@@ -116,8 +171,8 @@ class Rubiks {
         getRotationAllMesh(axis, index);
         this.updateRubik();
         this.model.add(this.nowPivotList);
-        const pivot = new Pivot(this.nowPivotList, index, axis, this);
-        pivot.rotation(angle);
+        this.pivot = new Pivot(this.nowPivotList, index, axis, this);
+        this.pivot.rotation(angle * direction);
     }
 
     rotationCubes(axis, index, direction) {
@@ -152,12 +207,15 @@ class Rubiks {
     }
 
     isDuringRotation() {
-        return Pivot.isDuringRotation;
+        if (this.pivot !== null) {
+            return this.pivot.isDuringRotation;
+        }
+        return false;
     }
 }
 
 class Pivot {
-    static isDuringRotation = false;
+    isDuringRotation = false;
     constructor(pivot, index, axis, rubik) {
         this.pivot = pivot;
         this.index = index;
@@ -165,7 +223,7 @@ class Pivot {
         this.rubik = rubik;
     }
     rotation(angle) {
-        Pivot.isDuringRotation = true;
+        this.isDuringRotation = true;
         let nowRadius = 0;
         let direction = angle < 0;
         const intervalId = setInterval(() => {
@@ -179,7 +237,7 @@ class Pivot {
                 clearInterval(intervalId);
                 this.rubik.rotationCubes(this.axis,this.index, direction);
                 this.rubik.drawMeshList();
-                Pivot.isDuringRotation = false;
+                this.isDuringRotation = false;
             }
         }, 1000 / 60);
     }
@@ -258,68 +316,91 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
 let isMouseDown = false;
-function onPointerMove( event ) {
-    if (!isMouseDown) return;
-    if (event.type === "touchmove") {
+
+function setPointer(event) {
+    if (event.type.indexOf("touch") != -1) {
         pointer.x = ( event.touches[0].clientX / window.innerWidth ) * 2 - 1;
 	    pointer.y = - ( event.touches[0].clientY / window.innerHeight ) * 2 + 1;
     }
-    if (event.type === "mousemove") {
+    if (event.type.indexOf("mouse") != -1) {
         pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
         pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
     }
+}
+function onPointerMove( event ) {
+    if (!isMouseDown || rubik.isDuringRotation()) return;
+    setPointer(event);
     render();
+}
+
+function onPointerDown( event ) {
+    if (isMouseDown || rubik.isDuringRotation()) return;
+    setPointer(event);
+    raycaster.setFromCamera( pointer, camera );
+	const intersects = raycaster.intersectObjects( scene.children );
+
+    if (0 < intersects.length) {
+        controls.enabled = false
+        isMouseDown = true;
+    }
 }
 
 let lastPosition = [];
 let lastFaceIndex = 0;
 function render() {
-    if (rubik.isDuringRotation()) return;
-    
 	raycaster.setFromCamera( pointer, camera );
 	const intersects = raycaster.intersectObjects( scene.children );
-
-    if (intersects.length == 0) return; 
-
-    controls.enabled = false
+    
+    if (intersects.length === 0) return;
     const p = intersects[0].object.position;
     let nowPosition = [p.x,p.y,p.z];
 
     if (lastPosition.length) {
         if (lastPosition.toString() == nowPosition.toString()) return;
-        let move = []
-        for (let i in lastPosition) {
-            move.push(lastPosition[i] - nowPosition[i]);
+        let move = [0, 0, 0];
+        for (let i = 0,isCheck = false; i < move.length; i++) {
+            if ((lastPosition[i] - nowPosition[i]) !== 0) {
+                move[i] = lastPosition[i] - nowPosition[i];
+                if (isCheck) return;
+                isCheck = true;
+            }
         }
-        let reverse1 = lastFaceIndex % 2 == 0 ? -1:1;
-        let reverse2 = lastFaceIndex % 2 == 0 ? 1:-1;
+        const reverse1 = lastFaceIndex % 2 == 0 ? -1:1;
+        const reverse2 = lastFaceIndex % 2 == 0 ? 1:-1;
         const index = Math.floor(lastFaceIndex / 2)
+
+        let addRotation = [ ];
         if (index == 0) {
             if (move[1] !== 0) {
-                rubik.rotationMesh('z', lastPosition[2]+1, 0.03 * move[1] * reverse1);
+                addRotation = ['z', lastPosition[2]+1,  move[1] * reverse1];
             }
             if (move[2] !== 0) {
-                rubik.rotationMesh('y', lastPosition[1]+1, 0.03 * move[2] * reverse2);
+                addRotation = ['y', lastPosition[1]+1, move[2] * reverse2];
             }
         }
         if (index == 1) {
             if (move[0] !== 0) {
-                rubik.rotationMesh('z', lastPosition[2]+1, 0.03 * move[0] * reverse2);
+                addRotation = ['z', lastPosition[2]+1, move[0] * reverse2];
             }
             if (move[2] !== 0) {
-                rubik.rotationMesh('x', lastPosition[0]+1, 0.03 * move[2] * reverse1);
+                addRotation = ['x', lastPosition[0]+1, move[2] * reverse1];
             }
         }
         if (index == 2) {
             if (move[0] !== 0) {
-                rubik.rotationMesh('y', lastPosition[1]+1, 0.03 * move[0] * reverse1);
+                addRotation = ['y', lastPosition[1]+1, move[0] * reverse1];
             }
             if (move[1] !== 0) {
-                rubik.rotationMesh('x', lastPosition[0]+1, 0.03 * move[1] * reverse2);
+                addRotation = ['x', lastPosition[0]+1, move[1] * reverse2];
             }
         }
-        lastPosition = [];
-        lastFaceIndex = 0;
+        if (addRotation.length !== 0) {
+            rubik.addHistory(addRotation[0], addRotation[1], addRotation[2]);
+            rubik.rotationMesh(addRotation[0], addRotation[1], 0.03 , addRotation[2]);
+            lastPosition = [];
+            lastFaceIndex = 0;
+            isMouseDown = false;
+        }
     } else {
         lastFaceIndex = intersects[0].face.materialIndex;
         lastPosition = [p.x,p.y,p.z];
@@ -327,20 +408,16 @@ function render() {
 }
 
 window.addEventListener('touchmove', onPointerMove);
-window.addEventListener('touchstart', ()=>{
-    isMouseDown = true;
-});
-window.addEventListener('touchend', ()=>{
+window.addEventListener('touchstart', onPointerDown);
+window.addEventListener('touchend', () => {
     controls.enabled = true;
     isMouseDown = false;
 });
 
 
 window.addEventListener('mousemove', onPointerMove);
-window.addEventListener('mousedown', ()=>{
-    isMouseDown = true;
-});
-window.addEventListener('mouseup', ()=>{
+window.addEventListener('mousedown', onPointerDown);
+window.addEventListener('mouseup', () => {
     controls.enabled = true;
     isMouseDown = false;
 });
@@ -351,3 +428,29 @@ function animate() {
     renderer.render(scene, camera);
 }
 animate();
+
+const scramble_btn = document.getElementById("controller_scramble");
+const prev_btn = document.getElementById("controller_prev");
+const next_btn = document.getElementById("controller_next");
+const auto_btn = document.getElementById("controller_auto");
+const speed_select = document.getElementById("controller_speed");
+
+const speeds = [0.1, 0.2 ,0.3];
+
+scramble_btn.addEventListener('click',()=>{
+    if(rubik.isAutoMode || rubik.isDuringRotation()) return;
+    rubik.scramble(speeds[speed_select.value],15,500);
+});
+prev_btn.addEventListener('click',()=>{
+    if(rubik.isAutoMode || rubik.isDuringRotation()) return;
+    rubik.prevHistory(speeds[speed_select.value]);
+});
+next_btn.addEventListener('click',()=>{
+    if(rubik.isAutoMode || rubik.isDuringRotation()) return;
+    rubik.nextHistory(speeds[speed_select.value]);
+});
+auto_btn.addEventListener('click',()=>{
+    if(rubik.isAutoMode || rubik.isDuringRotation()) return;
+    rubik.prevHistory(speeds[speed_select.value],rubik.nowHistory,500);
+});
+
